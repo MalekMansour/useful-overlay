@@ -2,12 +2,12 @@ import sys
 import asyncio
 import pythoncom
 import psutil
+import time
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout
 import winsdk.windows.media.control as wmc
 import win32api
 from pynput import keyboard
-import time
 
 # ─────────────────────────────────────────────
 # COLOR PRESETS (NumPad)
@@ -27,28 +27,22 @@ current_color = "white"
 # SPOTIFY NOW PLAYING
 # ─────────────────────────────────────────────
 async def spotify_now_playing():
-    # CoInitialize for COM (winsdk)
     pythoncom.CoInitialize()
     try:
         sessions = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
         current = sessions.get_current_session()
-
         if current is None:
             return ""
-
         info = await current.try_get_media_properties_async()
         source = (current.source_app_user_model_id or "").lower()
-
         if "spotify" not in source:
             return ""
-
         title = info.title or ""
         artist = ", ".join((info.artist or "").split(";"))
         return f"{artist} – {title}" if (artist or title) else ""
     except:
         return ""
 
-# synchronous wrapper (safe to call from PyQt thread)
 def fetch_spotify_sync():
     try:
         return asyncio.run(spotify_now_playing())
@@ -71,7 +65,7 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, False)
         self.setStyleSheet("background-color: black;")
 
-        # Smaller bar height
+        # Tiny top bar height
         screen_width = QApplication.primaryScreen().size().width()
         self.setGeometry(0, 0, screen_width, 26)
 
@@ -85,7 +79,7 @@ class Overlay(QWidget):
         self.battery_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
         layout.addWidget(self.battery_label)
 
-        # Mic level (kept exactly as you had it)
+        # Mic level (kept exactly as before)
         self.mic_label = QLabel("Mic: ▄▄▄▄▄ 0%")
         self.mic_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
         layout.addWidget(self.mic_label)
@@ -107,19 +101,26 @@ class Overlay(QWidget):
 
         # Timer logic
         self.timer_running = False
+        self.start_time = None
         self.seconds = 0
 
         # Spotify throttle
         self._last_spotify_time = 0.0
         self._spotify_interval = 1.0  # seconds
 
+        # Currently pressed keys (to prevent color spam)
+        self.keys_down = set()
+
         # Update loop
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_overlay)
         self.update_timer.start(500)
 
-        # Keyboard listener (pynput)
-        self.listener = keyboard.Listener(on_press=self.key_press)
+        # Keyboard listener
+        self.listener = keyboard.Listener(
+            on_press=self.key_press,
+            on_release=self.key_release
+        )
         self.listener.start()
 
     # ─────────────────────────────────────────────
@@ -127,31 +128,41 @@ class Overlay(QWidget):
     # ─────────────────────────────────────────────
     def key_press(self, key):
         global current_color
-
-        # Convert key to number (pynput KeyCode has .vk on Windows)
         if hasattr(key, "vk"):
             vk = key.vk
         else:
             return
 
-        # NumPad 1 → toggle timer
-        # Common virtual-key for NumPad1 is 97
-        if vk == 97:
-            self.timer_running = not self.timer_running
-            # do not reset seconds when toggling; preserve elapsed (same behaviour as before)
+        # Prevent multiple triggers if key is held
+        if vk in self.keys_down:
+            return
+        self.keys_down.add(vk)
 
-        # Color Hotkeys: NumPad 7-8-9 and 4-5-6
+        # NumPad 1 → start/stop & reset
+        if vk == 97:
+            if not self.timer_running:
+                self.start_time = time.time()
+                self.timer_running = True
+            else:
+                self.timer_running = False
+                self.start_time = None
+                self.seconds = 0
+
+        # Color Hotkeys
         num = None
-        if vk in (103, 104, 105):  # numpad 7,8,9
+        if vk in (103, 104, 105):  # 7-8-9
             num = {103: 7, 104: 8, 105: 9}[vk]
-        elif vk in (100, 101, 102):  # numpad 4,5,6
+        elif vk in (100, 101, 102):  # 4-5-6
             num = {100: 4, 101: 5, 102: 6}[vk]
 
         if num and num in COLORS:
             current_color = COLORS[num]
             self.apply_colors()
 
-    # Apply chosen color to all labels
+    def key_release(self, key):
+        if hasattr(key, "vk"):
+            self.keys_down.discard(key.vk)
+
     def apply_colors(self):
         style = f"color: {current_color}; font-size: 13px;"
         self.battery_label.setStyleSheet(style)
@@ -171,32 +182,29 @@ class Overlay(QWidget):
             batt_text = "Batt: --%"
         self.battery_label.setText(batt_text)
 
-        # Mic (kept exactly the same simulation you had: GetAsyncKeyState)
+        # Mic (kept as-is)
         try:
-            mic_level = win32api.GetAsyncKeyState(0x41)  # placeholder method you had
+            mic_level = win32api.GetAsyncKeyState(0x41)  # placeholder for your previous method
             mic_val = abs(mic_level) % 100
             bars = int(mic_val / 20)
             mic_bar = "█" * bars + "░" * (5 - bars)
             self.mic_label.setText(f"Mic: {mic_bar} {mic_val}%")
         except:
-            # fallback if win32api fails
             self.mic_label.setText("Mic: ░░░░░ 0%")
 
         # Timer
-        if self.timer_running:
-            self.seconds += 1
+        if self.timer_running and self.start_time is not None:
+            self.seconds = int(time.time() - self.start_time)
         mins = self.seconds // 60
         secs = self.seconds % 60
         self.timer_label.setText(f"Timer: {mins:02}:{secs:02}")
 
-        # Spotify (throttled to once per _spotify_interval seconds)
+        # Spotify (throttled)
         now = time.time()
         if now - self._last_spotify_time >= self._spotify_interval:
             self._last_spotify_time = now
             song = fetch_spotify_sync()
-            # Only set if non-empty; otherwise keep previous or blank
             self.spotify_label.setText(song or "")
-
 
 # ─────────────────────────────────────────────
 # RUN APP
