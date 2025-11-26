@@ -59,9 +59,9 @@ def get_mic_level():
         sample_rate = 44100
         audio = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='float32', blocking=True)
         rms = float(np.sqrt(np.mean(np.square(audio))))
-        scaled = min(max(rms * 180.0, 0.0), 1.0)  # tweak factor
+        scaled = min(max(rms * 180.0, 0.0), 1.0)  
         percent = int(scaled * 100)
-        bars = int((percent / 100) * 10)  # 10 bars now
+        bars = int((percent / 100) * 10)  
         return bars, percent
     except Exception:
         return 0, 0
