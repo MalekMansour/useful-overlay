@@ -11,6 +11,8 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout
 from pynput import keyboard
 import GPUtil
+import win32gui
+import win32process
 import psutil as ps
 
 # ─────────────────────────────────────────────
@@ -110,7 +112,7 @@ class Overlay(QWidget):
         for lbl in [self.battery_label, self.ram_label, self.gpu_label, self.cpu_label,
                     self.app_label, self.date_label, self.time_label, self.timer_label,
                     self.mic_label, self.spotify_label]:
-            lbl.setStyleSheet(f"color: {current_color}; font-size: 12px;")
+            lbl.setStyleSheet(f"color: {current_color}; font-size: 11px;")
             layout.addWidget(lbl)
 
         # Stretch to keep Spotify at right
