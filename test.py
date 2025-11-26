@@ -19,7 +19,7 @@ COLORS = {
     9: "#e73535",   # Red
     4: "#9ef39e",   # Light Green
     5: "#8de6ee",   # Cyan
-    6: "#b266ff"    # Purple
+    6: "#8943cf"    # Purple
 }
 current_color = "white"
 
