@@ -300,7 +300,6 @@ class Overlay(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setStyleSheet("background-color: black;")
 
-        # safe screen width access
         try:
             scr_w = QApplication.primaryScreen().size().width()
         except Exception:
