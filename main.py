@@ -6,9 +6,9 @@ import time
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout
 import winsdk.windows.media.control as wmc
-from ctypes import POINTER, cast
+from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
 from comtypes import CLSCTX_ALL
-from pycaw.pycaw import AudioUtilities, IAudioMeterInformation, IMMDeviceEnumerator
+from ctypes import POINTER, cast
 from pynput import keyboard
 
 # ─────────────────────────────────────────────
@@ -22,7 +22,6 @@ COLORS = {
     5: "#00eaff",   # Cyan
     6: "#b266ff"    # Purple
 }
-
 current_color = "white"
 
 # ─────────────────────────────────────────────
@@ -52,13 +51,6 @@ def fetch_spotify_sync():
         return ""
 
 # ─────────────────────────────────────────────
-# MIC CONSTANTS
-# ─────────────────────────────────────────────
-eRender = 0
-eCapture = 1
-eAll = 2
-
-# ─────────────────────────────────────────────
 # OVERLAY CLASS
 # ─────────────────────────────────────────────
 class Overlay(QWidget):
@@ -74,14 +66,14 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, False)
         self.setStyleSheet("background-color: black;")
 
-        # Top bar height
+        # Top bar dimensions
         screen_width = QApplication.primaryScreen().size().width()
         self.setGeometry(0, 0, screen_width, 26)
 
         # Layout
         layout = QHBoxLayout()
         layout.setContentsMargins(12, 2, 12, 2)
-        layout.setSpacing(35)
+        layout.setSpacing(30)
 
         # Battery
         self.battery_label = QLabel("Batt: --%")
@@ -89,7 +81,7 @@ class Overlay(QWidget):
         layout.addWidget(self.battery_label)
 
         # Mic level
-        self.mic_label = QLabel("Mic: ▄▄▄▄▄ 0% (Mic Name)")
+        self.mic_label = QLabel("Mic: ░░░░░ 0% (No Mic)")
         self.mic_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
         layout.addWidget(self.mic_label)
 
@@ -120,6 +112,9 @@ class Overlay(QWidget):
         # Key cooldown for color changes
         self.keys_down = set()
 
+        # Initialize devices
+        self.mic_device, self.mic_name = self.get_mic_device()
+
         # Update loop
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_overlay)
@@ -132,9 +127,6 @@ class Overlay(QWidget):
         )
         self.listener.start()
 
-        # Mic device
-        self.mic_device, self.mic_name = self.get_mic_device()
-
     # ─────────────────────────────────────────────
     # HOTKEYS
     # ─────────────────────────────────────────────
@@ -145,11 +137,12 @@ class Overlay(QWidget):
         else:
             return
 
+        # Prevent repeated triggers
         if vk in self.keys_down:
             return
         self.keys_down.add(vk)
 
-        # Timer (Numpad 1)
+        # Numpad 1 → start/stop & reset timer
         if vk == 97:
             if not self.timer_running:
                 self.start_time = time.time()
@@ -159,12 +152,12 @@ class Overlay(QWidget):
                 self.start_time = None
                 self.seconds = 0
 
-        # Color hotkeys
+        # Color hotkeys 7-9 / 4-6
         num = None
-        if vk in (103, 104, 105):  # 7-8-9
-            num = {103: 7, 104: 8, 105: 9}[vk]
-        elif vk in (100, 101, 102):  # 4-5-6
-            num = {100: 4, 101: 5, 102: 6}[vk]
+        if vk in (103, 104, 105):
+            num = {103:7, 104:8, 105:9}[vk]
+        elif vk in (100, 101, 102):
+            num = {100:4, 101:5, 102:6}[vk]
 
         if num and num in COLORS:
             current_color = COLORS[num]
@@ -182,21 +175,25 @@ class Overlay(QWidget):
         self.spotify_label.setStyleSheet(style)
 
     # ─────────────────────────────────────────────
-    # MIC DEVICE
+    # MIC FUNCTIONS
     # ─────────────────────────────────────────────
     def get_mic_device(self):
-     try:
-         enumerator = IMMDeviceEnumerator()
-         mic = enumerator.GetDefaultAudioEndpoint(eCapture, 2)
-         return mic, mic.FriendlyName
-     except:
-         return None, "No Mic"
+        try:
+            devices = AudioUtilities.GetMicrophone()
+            if not devices:
+                return None, "No Mic"
+            mic = devices[0]  # first mic (default Discord mic)
+            return mic, mic.FriendlyName
+        except:
+            return None, "No Mic"
 
     def get_mic_level(self):
         try:
             if not self.mic_device:
                 return 0
-            interface = self.mic_device.Activate(IAudioMeterInformation._iid_, CLSCTX_ALL, None)
+            interface = self.mic_device.Activate(
+                IAudioMeterInformation._iid_, CLSCTX_ALL, None
+            )
             meter = cast(interface, POINTER(IAudioMeterInformation))
             level = meter.GetPeakValue() * 100
             return int(level)
