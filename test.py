@@ -1,3 +1,4 @@
+# overlay_fixed.py
 import ctypes
 ctypes.windll.user32.SetProcessDPIAware()
 
@@ -19,6 +20,7 @@ import win32process
 import psutil as ps
 import os
 import threading
+import traceback
 
 # ─────────────────────────────────────────────
 # COLOR CYCLING
@@ -57,6 +59,7 @@ _worker_stop = False
 # SPOTIFY
 # ─────────────────────────────────────────────
 async def spotify_now_playing():
+    # COM must be initialized on the thread that uses it
     pythoncom.CoInitialize()
     try:
         sessions = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
@@ -70,44 +73,73 @@ async def spotify_now_playing():
         title = info.title or ""
         artist = ", ".join((info.artist or "").split(";"))
         return f"{artist} – {title}" if (artist or title) else "Spotify: —"
-    except:
+    except Exception:
+        # ensure COM cleaned up if something went wrong
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
         return "Spotify: —"
 
 def fetch_spotify_sync_worker():
     try:
         return asyncio.run(spotify_now_playing())
-    except:
+    except Exception:
         return "Spotify: —"
 
 # ─────────────────────────────────────────────
 # MIC LEVEL
 # ─────────────────────────────────────────────
 def get_mic_level_blocking():
+    """
+    Record a very short snippet and return (bars, percent).
+    This function is defensive: if sounddevice fails (no device, permission),
+    it returns (0,0) rather than crashing the worker.
+    """
     try:
+        # small buffer, lower sample rate to reduce CPU
         duration = 0.05
-        sample_rate = 44100
+        sample_rate = 22050
+        # ensure a default input device exists
+        sd.check_input_settings(samplerate=sample_rate, channels=1)
         audio = sd.rec(int(duration * sample_rate), samplerate=sample_rate,
                        channels=1, dtype='float32', blocking=True)
+        if audio is None or audio.size == 0:
+            return 0, 0
         rms = float(np.sqrt(np.mean(np.square(audio))))
-        scaled = min(max(rms * 180.0, 0.0), 1.0)
+        # Map rms to a reasonable 0-100 percent.
+        # quiet mic -> small percent; loud -> near 100
+        # tune multiplier empirically
+        scaled = min(max(rms * 200.0, 0.0), 1.0)
         percent = int(scaled * 100)
-        bars = int((percent / 100) * 10)
+        bars = int(round((percent / 100) * 10))
         return bars, percent
     except Exception:
+        # silent failure is better than crash; print for debug
+        # (don't spam repeatedly)
         return 0, 0
 
 # ─────────────────────────────────────────────
 # BACKGROUND WORKER THREAD
 # ─────────────────────────────────────────────
 def stats_worker_loop(spotify_interval=1.0):
-
-    # ★★★★★ THE FIX — REQUIRED FOR WINDOWS THREADS ★★★★★
-    pythoncom.CoInitialize()
+    # Initialize COM for this worker thread
+    try:
+        pythoncom.CoInitialize()
+    except Exception:
+        pass
 
     last_spotify = 0.0
     global _worker_stop
 
-    psutil.cpu_percent(interval=None)
+    # warm up cpu percent (psutil requires a call first)
+    try:
+        psutil.cpu_percent(interval=None)
+    except Exception:
+        pass
+
+    # small sleep to let UI start
+    time.sleep(0.05)
 
     while not _worker_stop:
         try:
@@ -115,26 +147,35 @@ def stats_worker_loop(spotify_interval=1.0):
             try:
                 battery = psutil.sensors_battery()
                 batt_text = f"Battery: {battery.percent}%" if battery else "Battery: --%"
-            except:
+            except Exception:
                 batt_text = "Battery: --%"
 
             # RAM
-            ram_percent = psutil.virtual_memory().percent
-            ram_text = f"RAM: {ram_percent}%"
+            try:
+                ram_percent = psutil.virtual_memory().percent
+                ram_text = f"RAM: {ram_percent}%"
+            except Exception:
+                ram_text = "RAM: --%"
 
             # CPU
-            cpu_percent = psutil.cpu_percent(interval=0.1)
-            cpu_text = f"CPU: {cpu_percent}%"
+            try:
+                cpu_percent = psutil.cpu_percent(interval=0.05)
+                cpu_text = f"CPU: {cpu_percent}%"
+            except Exception:
+                cpu_text = "CPU: --%"
 
             # GPU
             try:
                 gpus = GPUtil.getGPUs()
                 if gpus:
                     g = gpus[0]
-                    gpu_text = f"GPU: {g.load*100:.0f}% {getattr(g, 'temperature', 'N/A')}°C"
+                    # safe getattr for temperature
+                    temp = getattr(g, "temperature", None)
+                    temp_text = f" {temp}°C" if temp is not None else ""
+                    gpu_text = f"GPU: {g.load*100:.0f}%{temp_text}"
                 else:
                     gpu_text = "GPU: N/A"
-            except:
+            except Exception:
                 gpu_text = "GPU: N/A"
 
             # Foreground app
@@ -143,7 +184,7 @@ def stats_worker_loop(spotify_interval=1.0):
                 _, pid = win32process.GetWindowThreadProcessId(hwnd)
                 proc = ps.Process(pid)
                 app_text = f"App: {proc.name()}"
-            except:
+            except Exception:
                 app_text = "App: —"
 
             # Date / Time
@@ -154,12 +195,12 @@ def stats_worker_loop(spotify_interval=1.0):
             # Mic
             mic_bars, mic_percent = get_mic_level_blocking()
 
-            # Spotify (refresh every second)
+            # Spotify (refresh every spotify_interval seconds)
             now_t = time.time()
             if now_t - last_spotify >= spotify_interval:
                 try:
                     sp = fetch_spotify_sync_worker()
-                except:
+                except Exception:
                     sp = "Spotify: —"
                 last_spotify = now_t
             else:
@@ -180,9 +221,17 @@ def stats_worker_loop(spotify_interval=1.0):
                 stats["spotify"] = sp
 
         except Exception:
-            pass
+            # print traceback once per loop iteration so you can see what's wrong
+            traceback.print_exc()
 
+        # short sleep to avoid busy loop but keep UI snappy
         time.sleep(0.05)
+
+    # Cleanup COM for this thread
+    try:
+        pythoncom.CoUninitialize()
+    except Exception:
+        pass
 
 # ─────────────────────────────────────────────
 # OVERLAY CLASS
@@ -193,20 +242,32 @@ class Overlay(QWidget):
 
         global current_color
 
+        # make window frameless, always on top, not focused
         self.setWindowFlags(
             Qt.FramelessWindowHint |
             Qt.WindowStaysOnTopHint |
             Qt.Tool
         )
-        self.setStyleSheet("background-color: black;")
+        # nicer look
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowOpacity(0.92)
 
-        screen_width = QApplication.primaryScreen().size().width()
+        # get screen width in a safe way (QApplication instance must exist)
+        screen_width = 800
+        try:
+            app_instance = QApplication.instance()
+            if app_instance is not None and app_instance.primaryScreen() is not None:
+                screen_width = app_instance.primaryScreen().size().width()
+        except Exception:
+            pass
 
-        self.setGeometry(0, 0, screen_width, 26)
+        # small height for a compact bar
+        self.setGeometry(0, 0, screen_width, 28)
+        self.setFixedHeight(28)
 
         layout = QHBoxLayout()
-        layout.setContentsMargins(12, 2, 12, 2)
-        layout.setSpacing(90)
+        layout.setContentsMargins(8, 2, 8, 2)
+        layout.setSpacing(12)  # reduced spacing to avoid labels pushed off
 
         self.battery_label = QLabel("Battery: --%")
         self.ram_label = QLabel("RAM: --%")
@@ -227,6 +288,7 @@ class Overlay(QWidget):
 
         for lbl in self.labels:
             lbl.setStyleSheet(f"color: {current_color}; font-size: 12px;")
+            lbl.setFixedHeight(20)
             layout.addWidget(lbl)
 
         layout.addStretch(1)
@@ -255,6 +317,14 @@ class Overlay(QWidget):
             on_release=self.key_release
         )
         self.listener.start()
+
+        # Attempt a quick spotify fetch to avoid initial "—" if possible
+        try:
+            spinitial = fetch_spotify_sync_worker()
+            with stats_lock:
+                stats["spotify"] = spinitial
+        except Exception:
+            pass
 
     def key_press(self, key):
         global current_color, color_index, _worker_stop
@@ -300,16 +370,16 @@ class Overlay(QWidget):
 
     def update_overlay(self):
         with stats_lock:
-            batt = stats["battery"]
-            ram = stats["ram"]
-            gpu = stats["gpu"]
-            cpu = stats["cpu"]
-            app = stats["app"]
-            date = stats["date"]
-            tim = stats["time"]
-            mic_bars = stats["mic_bars"]
-            mic_percent = stats["mic_percent"]
-            spotify_text = stats["spotify"]
+            batt = stats.get("battery", "Battery: --%")
+            ram = stats.get("ram", "RAM: --%")
+            gpu = stats.get("gpu", "GPU: --%")
+            cpu = stats.get("cpu", "CPU: --%")
+            app = stats.get("app", "App: —")
+            date = stats.get("date", "Date: --/--/----")
+            tim = stats.get("time", "Time: --:--")
+            mic_bars = stats.get("mic_bars", 0)
+            mic_percent = stats.get("mic_percent", 0)
+            spotify_text = stats.get("spotify", "Spotify: —")
 
         self.battery_label.setText(batt)
         self.ram_label.setText(ram)
