@@ -6,10 +6,9 @@ import time
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout
 import winsdk.windows.media.control as wmc
-from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
-from comtypes import CLSCTX_ALL
-from ctypes import POINTER, cast
 from pynput import keyboard
+import pyaudio
+import numpy as np
 
 # ─────────────────────────────────────────────
 # COLOR PRESETS (NumPad)
@@ -112,8 +111,11 @@ class Overlay(QWidget):
         # Key cooldown for color changes
         self.keys_down = set()
 
-        # Initialize devices
-        self.mic_device, self.mic_name = self.get_mic_device()
+        # PyAudio setup for mic
+        self.p = pyaudio.PyAudio()
+        self.mic_stream = None
+        self.start_mic_stream()
+        self.mic_name = "Mic"
 
         # Update loop
         self.update_timer = QTimer()
@@ -175,29 +177,35 @@ class Overlay(QWidget):
         self.spotify_label.setStyleSheet(style)
 
     # ─────────────────────────────────────────────
-    # MIC FUNCTIONS
+    # MIC FUNCTIONS (PyAudio)
     # ─────────────────────────────────────────────
-    def get_mic_device(self):
+    def start_mic_stream(self):
+        if self.mic_stream:
+            self.mic_stream.stop_stream()
+            self.mic_stream.close()
         try:
-            devices = AudioUtilities.GetMicrophone()
-            if not devices:
-                return None, "No Mic"
-            mic = devices[0]  # first mic (default Discord mic)
-            return mic, mic.FriendlyName
-        except:
-            return None, "No Mic"
+            self.mic_stream = self.p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=44100,
+                input=True,
+                frames_per_buffer=1024,
+            )
+        except Exception as e:
+            print("Mic not found:", e)
+            self.mic_stream = None
+            self.mic_name = "No Mic"
 
     def get_mic_level(self):
+        if not self.mic_stream:
+            return 0
         try:
-            if not self.mic_device:
-                return 0
-            interface = self.mic_device.Activate(
-                IAudioMeterInformation._iid_, CLSCTX_ALL, None
-            )
-            meter = cast(interface, POINTER(IAudioMeterInformation))
-            level = meter.GetPeakValue() * 100
-            return int(level)
-        except:
+            data = self.mic_stream.read(1024, exception_on_overflow=False)
+            audio_data = np.frombuffer(data, dtype=np.int16)
+            rms = np.sqrt(np.mean(audio_data**2))
+            level = min(int(rms / 32768 * 100), 100)
+            return level
+        except Exception as e:
             return 0
 
     # ─────────────────────────────────────────────
