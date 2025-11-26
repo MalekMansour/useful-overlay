@@ -3,12 +3,17 @@ import asyncio
 import pythoncom
 import psutil
 import time
+import datetime
+import numpy as np
+import sounddevice as sd
+import winsdk.windows.media.control as wmc
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout
-import winsdk.windows.media.control as wmc
 from pynput import keyboard
-import sounddevice as sd
-import numpy as np
+import GPUtil
+import win32gui
+import win32process
+import psutil as ps
 
 # ─────────────────────────────────────────────
 # COLOR PRESETS (NumPad)
@@ -32,22 +37,22 @@ async def spotify_now_playing():
         sessions = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
         current = sessions.get_current_session()
         if current is None:
-            return ""
+            return "Spotify: —"
         info = await current.try_get_media_properties_async()
         source = (current.source_app_user_model_id or "").lower()
         if "spotify" not in source:
-            return ""
+            return "Spotify: —"
         title = info.title or ""
         artist = ", ".join((info.artist or "").split(";"))
-        return f"{artist} – {title}" if (artist or title) else ""
+        return f"{artist} – {title}" if (artist or title) else "Spotify: —"
     except:
-        return ""
+        return "Spotify: —"
 
 def fetch_spotify_sync():
     try:
         return asyncio.run(spotify_now_playing())
     except:
-        return ""
+        return "Spotify: —"
 
 # ─────────────────────────────────────────────
 # MIC FUNCTION USING SOUNDEVICE
@@ -84,35 +89,34 @@ class Overlay(QWidget):
 
         # Top bar dimensions
         screen_width = QApplication.primaryScreen().size().width()
-        self.setGeometry(0, 0, screen_width, 12)
+        self.setGeometry(0, 0, screen_width, 26)
 
         # Layout
         layout = QHBoxLayout()
         layout.setContentsMargins(12, 2, 12, 2)
-        layout.setSpacing(50)
+        layout.setSpacing(30)
 
-        # Battery
+        # Add widgets in requested order
         self.battery_label = QLabel("Battery: --%")
-        self.battery_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
-        layout.addWidget(self.battery_label)
-
-        # Mic level
-        self.mic_label = QLabel("Mic: ░░░░░ 0%")
-        self.mic_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
-        layout.addWidget(self.mic_label)
-
-        # Timer
+        self.ram_label = QLabel("RAM: --%")
+        self.gpu_label = QLabel("GPU: --%")
+        self.cpu_label = QLabel("CPU: --%")
+        self.app_label = QLabel("App: —")
+        self.date_label = QLabel("Date: --/--/----")
+        self.time_label = QLabel("Time: --:--")
         self.timer_label = QLabel("Timer: 00:00")
-        self.timer_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
-        layout.addWidget(self.timer_label)
-
-        # Spacer then Spotify right aligned
-        layout.addStretch(1)
-
-        # Spotify
+        self.mic_label = QLabel("Mic: ░░░░░░░░░░ 0%")
         self.spotify_label = QLabel("Spotify: —")
-        self.spotify_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
-        layout.addWidget(self.spotify_label)
+
+        # Apply color
+        for lbl in [self.battery_label, self.ram_label, self.gpu_label, self.cpu_label,
+                    self.app_label, self.date_label, self.time_label, self.timer_label,
+                    self.mic_label, self.spotify_label]:
+            lbl.setStyleSheet(f"color: {current_color}; font-size: 12px;")
+            layout.addWidget(lbl)
+
+        # Stretch to keep Spotify at right
+        layout.addStretch(1)
 
         self.setLayout(layout)
 
@@ -150,13 +154,11 @@ class Overlay(QWidget):
         else:
             return
 
-        # Prevent repeated triggers
         if vk in self.keys_down:
             return
         self.keys_down.add(vk)
 
-        # Numpad 1 → start/stop & reset timer
-        if vk == 97:
+        if vk == 97:  # Numpad 1 → start/stop timer
             if not self.timer_running:
                 self.start_time = time.time()
                 self.timer_running = True
@@ -181,11 +183,11 @@ class Overlay(QWidget):
             self.keys_down.discard(key.vk)
 
     def apply_colors(self):
-        style = f"color: {current_color}; font-size: 11px;"
-        self.battery_label.setStyleSheet(style)
-        self.mic_label.setStyleSheet(style)
-        self.timer_label.setStyleSheet(style)
-        self.spotify_label.setStyleSheet(style)
+        style = f"color: {current_color}; font-size: 12px;"
+        for lbl in [self.battery_label, self.ram_label, self.gpu_label, self.cpu_label,
+                    self.app_label, self.date_label, self.time_label, self.timer_label,
+                    self.mic_label, self.spotify_label]:
+            lbl.setStyleSheet(style)
 
     # ─────────────────────────────────────────────
     # UPDATE LOOP
@@ -194,15 +196,43 @@ class Overlay(QWidget):
         # Battery
         try:
             battery = psutil.sensors_battery()
-            batt_text = f"Battery: {battery.percent}%" if battery else "Battery: --%"
+            self.battery_label.setText(f"Battery: {battery.percent}%" if battery else "Battery: --%")
         except:
-            batt_text = "Battery: --%"
-        self.battery_label.setText(batt_text)
+            self.battery_label.setText("Battery: --%")
 
-        # Mic
-        bars, percent = get_mic_level()
-        mic_bar = "█" * bars + "░" * (10 - bars) 
-        self.mic_label.setText(f"Mic: {mic_bar} {percent}%")
+        # RAM
+        ram_percent = psutil.virtual_memory().percent
+        self.ram_label.setText(f"RAM: {ram_percent}%")
+
+        # GPU
+        try:
+            gpus = GPUtil.getGPUs()
+            if gpus:
+                gpu = gpus[0]
+                self.gpu_label.setText(f"GPU: {gpu.load*100:.0f}% {gpu.temperature}°C")
+            else:
+                self.gpu_label.setText("GPU: N/A")
+        except:
+            self.gpu_label.setText("GPU: N/A")
+
+        # CPU
+        cpu_percent = psutil.cpu_percent(interval=None)
+        self.cpu_label.setText(f"CPU: {cpu_percent}%")
+
+        # Current App
+        try:
+            hwnd = win32gui.GetForegroundWindow()
+            tid, pid = win32process.GetWindowThreadProcessId(hwnd)
+            proc = ps.Process(pid)
+            app_name = proc.name()
+            self.app_label.setText(f"App: {app_name}")
+        except:
+            self.app_label.setText("App: —")
+
+        # Date & Time
+        now = datetime.datetime.now()
+        self.date_label.setText(f"Date: {now.day:02}/{now.month:02}/{now.year}")
+        self.time_label.setText(f"Time: {now.strftime('%I:%M %p')}")
 
         # Timer
         if self.timer_running and self.start_time is not None:
@@ -211,10 +241,15 @@ class Overlay(QWidget):
         secs = self.seconds % 60
         self.timer_label.setText(f"Timer: {mins:02}:{secs:02}")
 
+        # Mic
+        bars, percent = get_mic_level()
+        mic_bar = "█" * bars + "░" * (10 - bars)
+        self.mic_label.setText(f"Mic: {mic_bar} {percent}%")
+
         # Spotify (throttled)
-        now = time.time()
-        if now - self._last_spotify_time >= self._spotify_interval:
-            self._last_spotify_time = now
+        now_time = time.time()
+        if now_time - self._last_spotify_time >= self._spotify_interval:
+            self._last_spotify_time = now_time
             song = fetch_spotify_sync()
             self.spotify_label.setText(song or "Spotify: —")
 
