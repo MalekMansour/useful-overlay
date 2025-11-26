@@ -299,11 +299,11 @@ class Overlay(QWidget):
         except Exception:
             pass
 
-        self.setGeometry(0, 0, scr_w, 24)
+        self.setGeometry(0, 0, scr_w, 26)
 
         layout = QHBoxLayout()
         layout.setContentsMargins(8, 2, 8, 2)
-        layout.setSpacing(40)
+        layout.setSpacing(90)
 
         self.battery_label = QLabel()
         self.ram_label = QLabel()
