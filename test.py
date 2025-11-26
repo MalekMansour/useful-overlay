@@ -1,3 +1,5 @@
+import ctypes
+ctypes.windll.user32.SetProcessDPIAware()
 import sys
 import asyncio
 import pythoncom
@@ -89,7 +91,7 @@ class Overlay(QWidget):
 
         # Top bar dimensions
         screen_width = QApplication.primaryScreen().size().width()
-        self.setGeometry(0, 0, screen_width, 12)
+        self.setGeometry(0, 0, screen_width, 20)
 
         # Layout
         layout = QHBoxLayout()
@@ -112,7 +114,7 @@ class Overlay(QWidget):
         for lbl in [self.battery_label, self.ram_label, self.gpu_label, self.cpu_label,
                     self.app_label, self.date_label, self.time_label, self.timer_label,
                     self.mic_label, self.spotify_label]:
-            lbl.setStyleSheet(f"color: {current_color}; font-size: 11px;")
+            lbl.setStyleSheet(f"color: {current_color}; font-size: 12px;")
             layout.addWidget(lbl)
 
         # Stretch to keep Spotify at right
