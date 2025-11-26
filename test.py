@@ -15,10 +15,10 @@ import numpy as np
 # ─────────────────────────────────────────────
 COLORS = {
     7: "white",
-    8: "#ff66cc",   # Pink
-    9: "red",
-    4: "#66ff66",   # Light Green
-    5: "#00eaff",   # Cyan
+    8: "#fd75d0",   # Pink
+    9: "#e73535",   # Red
+    4: "#9ef39e",   # Light Green
+    5: "#8de6ee",   # Cyan
     6: "#b266ff"    # Purple
 }
 current_color = "white"
