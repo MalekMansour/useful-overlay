@@ -11,8 +11,6 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout
 from pynput import keyboard
 import GPUtil
-import win32gui
-import win32process
 import psutil as ps
 
 # ─────────────────────────────────────────────
