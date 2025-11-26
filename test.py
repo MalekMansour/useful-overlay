@@ -89,7 +89,7 @@ class Overlay(QWidget):
         # Layout
         layout = QHBoxLayout()
         layout.setContentsMargins(12, 2, 12, 2)
-        layout.setSpacing(10)
+        layout.setSpacing(50)
 
         # Battery
         self.battery_label = QLabel("Battery: --%")
