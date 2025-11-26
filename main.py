@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout
 import winsdk.windows.media.control as wmc
 from pynput import keyboard
-import pyaudio
+import sounddevice as sd
 import numpy as np
 
 # ─────────────────────────────────────────────
@@ -15,11 +15,11 @@ import numpy as np
 # ─────────────────────────────────────────────
 COLORS = {
     7: "white",
-    8: "#ff66cc",   # Pink
-    9: "red",
-    4: "#66ff66",   # Light Green
-    5: "#00eaff",   # Cyan
-    6: "#b266ff"    # Purple
+    8: "#fd75d0",   # Pink
+    9: "#e73535",   # Red
+    4: "#9ef39e",   # Light Green
+    5: "#8de6ee",   # Cyan
+    6: "#8943cf"    # Purple
 }
 current_color = "white"
 
@@ -48,6 +48,23 @@ def fetch_spotify_sync():
         return asyncio.run(spotify_now_playing())
     except:
         return ""
+
+# ─────────────────────────────────────────────
+# MIC FUNCTION USING SOUNDEVICE
+# ─────────────────────────────────────────────
+def get_mic_level():
+    """Returns a tuple (bars, percent) for mic bar with 10 bars."""
+    try:
+        duration = 0.05  # 50ms snippet
+        sample_rate = 44100
+        audio = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='float32', blocking=True)
+        rms = float(np.sqrt(np.mean(np.square(audio))))
+        scaled = min(max(rms * 180.0, 0.0), 1.0)  
+        percent = int(scaled * 100)
+        bars = int((percent / 100) * 10)  
+        return bars, percent
+    except Exception:
+        return 0, 0
 
 # ─────────────────────────────────────────────
 # OVERLAY CLASS
@@ -93,7 +110,7 @@ class Overlay(QWidget):
         layout.addStretch(1)
 
         # Spotify
-        self.spotify_label = QLabel("")
+        self.spotify_label = QLabel("Spotify: —")
         self.spotify_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
         layout.addWidget(self.spotify_label)
 
@@ -110,12 +127,6 @@ class Overlay(QWidget):
 
         # Key cooldown for color changes
         self.keys_down = set()
-
-        # PyAudio setup for mic
-        self.p = pyaudio.PyAudio()
-        self.mic_stream = None
-        self.start_mic_stream()
-        self.mic_name = "Mic"
 
         # Update loop
         self.update_timer = QTimer()
@@ -177,54 +188,21 @@ class Overlay(QWidget):
         self.spotify_label.setStyleSheet(style)
 
     # ─────────────────────────────────────────────
-    # MIC FUNCTIONS (PyAudio)
-    # ─────────────────────────────────────────────
-    def start_mic_stream(self):
-        if self.mic_stream:
-            self.mic_stream.stop_stream()
-            self.mic_stream.close()
-        try:
-            self.mic_stream = self.p.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=44100,
-                input=True,
-                frames_per_buffer=1024,
-            )
-        except Exception as e:
-            print("Mic not found:", e)
-            self.mic_stream = None
-            self.mic_name = "No Mic"
-
-    def get_mic_level(self):
-        if not self.mic_stream:
-            return 0
-        try:
-            data = self.mic_stream.read(1024, exception_on_overflow=False)
-            audio_data = np.frombuffer(data, dtype=np.int16)
-            rms = np.sqrt(np.mean(audio_data**2))
-            level = min(int(rms / 32768 * 100), 100)
-            return level
-        except Exception as e:
-            return 0
-
-    # ─────────────────────────────────────────────
     # UPDATE LOOP
     # ─────────────────────────────────────────────
     def update_overlay(self):
         # Battery
         try:
             battery = psutil.sensors_battery()
-            batt_text = f"Batt: {battery.percent}%" if battery else "Batt: --%"
+            batt_text = f"Battery: {battery.percent}%" if battery else "Battery: --%"
         except:
-            batt_text = "Batt: --%"
+            batt_text = "Battery: --%"
         self.battery_label.setText(batt_text)
 
         # Mic
-        mic_val = self.get_mic_level()
-        bars = int(mic_val / 20)
-        mic_bar = "█" * bars + "░" * (5 - bars)
-        self.mic_label.setText(f"Mic: {mic_bar} {mic_val}% ({self.mic_name})")
+        bars, percent = get_mic_level()
+        mic_bar = "█" * bars + "░" * (10 - bars) 
+        self.mic_label.setText(f"Mic: {mic_bar} {percent}%")
 
         # Timer
         if self.timer_running and self.start_time is not None:
@@ -238,7 +216,7 @@ class Overlay(QWidget):
         if now - self._last_spotify_time >= self._spotify_interval:
             self._last_spotify_time = now
             song = fetch_spotify_sync()
-            self.spotify_label.setText(song or "")
+            self.spotify_label.setText(song or "Spotify: —")
 
 # ─────────────────────────────────────────────
 # RUN APP
