@@ -309,7 +309,7 @@ class Overlay(QWidget):
 
         layout = QHBoxLayout()
         layout.setContentsMargins(8, 2, 8, 2)
-        layout.setSpacing(40)
+        layout.setSpacing(90)
 
         self.battery_label = QLabel()
         self.ram_label = QLabel()
