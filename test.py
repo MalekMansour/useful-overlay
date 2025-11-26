@@ -16,19 +16,21 @@ import GPUtil
 import win32gui
 import win32process
 import psutil as ps
+import os
 
 # ─────────────────────────────────────────────
-# COLOR PRESETS (NumPad)
+# COLOR CYCLE ORDER (for NumPad 2)
 # ─────────────────────────────────────────────
-COLORS = {
-    7: "white",
-    8: "#fd75d0",   # Pink
-    9: "#e73535",   # Red
-    4: "#9ef39e",   # Light Green
-    5: "#8de6ee",   # Cyan
-    6: "#8943cf"    # Purple
-}
-current_color = "white"
+COLOR_CYCLE = [
+    "white",
+    "#9ef39e",  # light green
+    "#8de6ee",  # cyan
+    "#e73535",  # red
+    "#fd75d0",  # pink
+    "#8943cf",  # purple
+]
+current_color_index = 0
+current_color = COLOR_CYCLE[current_color_index]
 
 # ─────────────────────────────────────────────
 # SPOTIFY NOW PLAYING
@@ -97,6 +99,7 @@ class Overlay(QWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(12, 2, 12, 2)
         layout.setSpacing(90)
+
         # Labels
         self.battery_label = QLabel("Battery: --%")
         self.ram_label = QLabel("RAM: --%")
@@ -109,14 +112,13 @@ class Overlay(QWidget):
         self.mic_label = QLabel("Mic: ░░░░░░░░░░ 0%")
         self.spotify_label = QLabel("Spotify: —")
 
-        # Apply color
+        # Apply default color
         for lbl in [self.battery_label, self.ram_label, self.gpu_label, self.cpu_label,
                     self.app_label, self.date_label, self.time_label, self.timer_label,
                     self.mic_label, self.spotify_label]:
             lbl.setStyleSheet(f"color: {current_color}; font-size: 12px;")
             layout.addWidget(lbl)
 
-        # Stretch to keep Spotify at right
         layout.addStretch(1)
 
         self.setLayout(layout)
@@ -130,8 +132,8 @@ class Overlay(QWidget):
         self._last_spotify_time = 0.0
         self._spotify_interval = 1.0  # seconds
 
-        # Key cooldown for color changes
-        self.keys_down = set()
+        # Key cooldown
+        self.keys_down = {}
 
         # Update loop
         self.update_timer = QTimer()
@@ -146,20 +148,23 @@ class Overlay(QWidget):
         self.listener.start()
 
     # ─────────────────────────────────────────────
-    # HOTKEYS
+    # HOTKEYS (Updated)
     # ─────────────────────────────────────────────
     def key_press(self, key):
-        global current_color
+        global current_color_index, current_color
+
         if hasattr(key, "vk"):
             vk = key.vk
         else:
             return
 
+        # Debounce
         if vk in self.keys_down:
             return
-        self.keys_down.add(vk)
+        self.keys_down[vk] = True
 
-        if vk == 97:  # Numpad 1 → start/stop timer
+        # Numpad 1 → Timer start/stop
+        if vk == 97:
             if not self.timer_running:
                 self.start_time = time.time()
                 self.timer_running = True
@@ -168,20 +173,21 @@ class Overlay(QWidget):
                 self.start_time = None
                 self.seconds = 0
 
-        # Color hotkeys 7-9 / 4-6
-        num = None
-        if vk in (103, 104, 105):
-            num = {103:7, 104:8, 105:9}[vk]
-        elif vk in (100, 101, 102):
-            num = {100:4, 101:5, 102:6}[vk]
-
-        if num and num in COLORS:
-            current_color = COLORS[num]
+        # Numpad 2 → COLOR CYCLE
+        if vk == 98:
+            current_color_index = (current_color_index + 1) % len(COLOR_CYCLE)
+            current_color = COLOR_CYCLE[current_color_index]
             self.apply_colors()
+
+        # Numpad 3 → REFRESH PROGRAM
+        if vk == 99:
+            os.execv(sys.executable, ["python"] + sys.argv)
 
     def key_release(self, key):
         if hasattr(key, "vk"):
-            self.keys_down.discard(key.vk)
+            vk = key.vk
+            if vk in self.keys_down:
+                del self.keys_down[vk]
 
     def apply_colors(self):
         style = f"color: {current_color}; font-size: 12px;"
@@ -202,8 +208,7 @@ class Overlay(QWidget):
             self.battery_label.setText("Battery: --%")
 
         # RAM
-        ram_percent = psutil.virtual_memory().percent
-        self.ram_label.setText(f"RAM: {ram_percent}%")
+        self.ram_label.setText(f"RAM: {psutil.virtual_memory().percent}%")
 
         # GPU
         try:
@@ -217,20 +222,18 @@ class Overlay(QWidget):
             self.gpu_label.setText("GPU: N/A")
 
         # CPU
-        cpu_percent = psutil.cpu_percent(interval=None)
-        self.cpu_label.setText(f"CPU: {cpu_percent}%")
+        self.cpu_label.setText(f"CPU: {psutil.cpu_percent(interval=None)}%")
 
-        # Current App
+        # Foreground app
         try:
             hwnd = win32gui.GetForegroundWindow()
             tid, pid = win32process.GetWindowThreadProcessId(hwnd)
             proc = ps.Process(pid)
-            app_name = proc.name()
-            self.app_label.setText(f"App: {app_name}")
+            self.app_label.setText(f"App: {proc.name()}")
         except:
             self.app_label.setText("App: —")
 
-        # Date & Time
+        # Date/Time
         now = datetime.datetime.now()
         self.date_label.setText(f"Date: {now.day:02}/{now.month:02}/{now.year}")
         self.time_label.setText(f"Time: {now.strftime('%I:%M %p')}")
@@ -244,15 +247,14 @@ class Overlay(QWidget):
 
         # Mic
         bars, percent = get_mic_level()
-        mic_bar = "█" * bars + "░" * (10 - bars)
-        self.mic_label.setText(f"Mic: {mic_bar} {percent}%")
+        self.mic_label.setText(f"Mic: {'█'*bars}{'░'*(10-bars)} {percent}%")
 
-        # Spotify (throttled)
-        now_time = time.time()
-        if now_time - self._last_spotify_time >= self._spotify_interval:
-            self._last_spotify_time = now_time
+        # Spotify
+        t = time.time()
+        if t - self._last_spotify_time >= self._spotify_interval:
+            self._last_spotify_time = t
             song = fetch_spotify_sync()
-            self.spotify_label.setText(song or "Spotify: —")
+            self.spotify_label.setText(song)
 
 # ─────────────────────────────────────────────
 # RUN APP
