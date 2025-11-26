@@ -201,8 +201,8 @@ class Overlay(QWidget):
 
         # Mic
         bars, percent = get_mic_level()
-        mic_bar = "█" * bars + "░" * (10 - bars)  # 10 bars
-        self.mic_label.setText(f"Mic: {mic_bar} {percent}% (Mic)")
+        mic_bar = "█" * bars + "░" * (10 - bars) 
+        self.mic_label.setText(f"Mic: {mic_bar} {percent}%")
 
         # Timer
         if self.timer_running and self.start_time is not None:
