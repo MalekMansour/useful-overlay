@@ -322,7 +322,7 @@ class Overlay(QWidget):
         ]
 
         for lbl in self.labels:
-            lbl.setStyleSheet(f"color: {current_color}; font-size: 11px;")
+            lbl.setStyleSheet(f"color: {current_color}; font-size: 12px;")
             layout.addWidget(lbl)
 
         layout.addStretch(1)
