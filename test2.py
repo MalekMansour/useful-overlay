@@ -112,10 +112,6 @@ async def _spotify_get_async():
     return None
 
 def spotify_now_playing():
-    """
-    Synchronous wrapper called by worker thread. Returns a string (e.g. 'Artist – Title')
-    or None if nothing useful. This function initializes COM on this thread temporarily.
-    """
     try:
         # Ensure COM in this thread (safe to call multiple times)
         try:
