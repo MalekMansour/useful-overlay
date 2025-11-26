@@ -17,7 +17,6 @@ import threading
 import win32gui, win32process
 import psutil as ps
 
-# TRY importing GPUtil, but DO NOT CRASH if not installed
 try:
     import GPUtil
     gpu_available = True
