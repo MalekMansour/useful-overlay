@@ -194,7 +194,7 @@ class Overlay(QWidget):
         # Battery
         try:
             battery = psutil.sensors_battery()
-            batt_text = f"Batt: {battery.percent}%" if battery else "Battery: --%"
+            batt_text = f"Battery: {battery.percent}%" if battery else "Battery: --%"
         except:
             batt_text = "Battery: --%"
         self.battery_label.setText(batt_text)
