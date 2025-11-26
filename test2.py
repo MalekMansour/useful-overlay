@@ -17,6 +17,7 @@ import threading
 import win32gui, win32process
 import psutil as ps
 
+# optional GPUtil
 try:
     import GPUtil
     gpu_available = True
@@ -24,17 +25,18 @@ except:
     gpu_available = False
 
 import os
+import traceback
 
 # ─────────────────────────────────────────────
-# COLORS
+# COLORS (order requested)
 # ─────────────────────────────────────────────
 COLOR_CYCLE = [
     "white",
-    "#9ef39e",
-    "#8de6ee",
-    "#e73535",
-    "#fd75d0",
-    "#8943cf"
+    "#e73535",  # red
+    "#8de6ee",  # cyan
+    "#9ef39e",  # green
+    "#fd75d0",  # pink
+    "#8943cf"   # purple
 ]
 color_index = 0
 current_color = COLOR_CYCLE[color_index]
@@ -51,7 +53,6 @@ stats = {
     "app": "App: —",
     "date": "Date: --/--/----",
     "time": "Time: --:--",
-    "timer_seconds": 0,
     "mic_bars": 0,
     "mic_percent": 0,
     "spotify": "Spotify: —"
@@ -59,48 +60,65 @@ stats = {
 _worker_stop = False
 
 # ─────────────────────────────────────────────
-# SPOTIFY (robust & permissive)
+# Timer state (controlled by numpad 7)
 # ─────────────────────────────────────────────
-# Cache last good string, and timestamp it
-_spotify_cache = {"text": "Spotify: —", "ts": 0.0}
-_SPOTIFY_CACHE_TTL = 3.0  # seconds to keep last good value on transient failure
+timer_lock = threading.Lock()
+_timer_running = False   # True when actively counting
+_timer_offset = 0.0      # seconds accumulated while previously running
+_timer_start_time = None # wall-clock when current run began
 
+def timer_start():
+    global _timer_running, _timer_start_time
+    with timer_lock:
+        if not _timer_running:
+            _timer_start_time = time.time()
+            _timer_running = True
+
+def timer_pause():
+    global _timer_running, _timer_offset, _timer_start_time
+    with timer_lock:
+        if _timer_running:
+            _timer_offset += time.time() - (_timer_start_time or time.time())
+            _timer_running = False
+            _timer_start_time = None
+
+def timer_reset_and_start():
+    global _timer_running, _timer_offset, _timer_start_time
+    with timer_lock:
+        _timer_offset = 0.0
+        _timer_start_time = time.time()
+        _timer_running = True
+
+def timer_get_seconds_int():
+    with timer_lock:
+        total = _timer_offset
+        if _timer_running and _timer_start_time is not None:
+            total += time.time() - _timer_start_time
+        return int(total)
+
+# ─────────────────────────────────────────────
+# Spotify helper (permissive)
+# ─────────────────────────────────────────────
 async def _spotify_get_async():
-    """
-    Async helper that talks to winsdk and returns a string or None on no useful data.
-    This runs inside asyncio.run(...) where called.
-    """
-    # Important: do *not* rely on source_app_user_model_id being 'spotify' exactly.
     sessions = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
     current = sessions.get_current_session()
     if current is None:
         return None
-
     try:
         props = await current.try_get_media_properties_async()
     except Exception:
         return None
-
-    # Try artist/title first (most common)
     artist = getattr(props, "artist", "") or ""
     title = getattr(props, "title", "") or ""
-
-    # Sometimes other fields exist; try album or albumartist fallback
     if not artist and not title:
-        # Some implementations use 'album' or other properties; attempt safe attribute reads
         album = getattr(props, "album", "") or ""
-        albumartist = getattr(props, "albumArtist", "") or getattr(props, "albumArtist", None) or ""
-        # If album has something, use it as 'title' fallback
+        albumartist = getattr(props, "albumArtist", "") or ""
         if album and not title:
             title = album
         if albumartist and not artist:
             artist = albumartist
-
-    # If still nothing useful, return None
     if not artist and not title:
         return None
-
-    # Return a nice string
     a = artist.strip()
     t = title.strip()
     if a and t:
@@ -113,90 +131,85 @@ async def _spotify_get_async():
 
 def spotify_now_playing():
     try:
-        # Ensure COM in this thread (safe to call multiple times)
         try:
             pythoncom.CoInitialize()
         except Exception:
             pass
-
-        # asyncio.run the async helper; safe here because it's called in worker thread
         try:
-            result = asyncio.run(_spotify_get_async())
-        except Exception as e:
-            # Sometimes asyncio.run will fail if an event loop is already running (rare in worker thread)
-            # Fallback: create new loop manually
+            return asyncio.run(_spotify_get_async())
+        except Exception:
+            # fallback loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                result = loop.run_until_complete(_spotify_get_async())
-            except Exception:
-                result = None
-        return result
+                return loop.run_until_complete(_spotify_get_async())
+            finally:
+                try:
+                    loop.close()
+                except:
+                    pass
     finally:
-        # CoUninitialize to be tidy (ignore failures)
         try:
             pythoncom.CoUninitialize()
         except Exception:
             pass
+    return None
 
 # ─────────────────────────────────────────────
-# MIC LEVEL
+# Mic level (non-blocking-ish but short)
 # ─────────────────────────────────────────────
 def get_mic_level_blocking():
     try:
         duration = 0.05
-        sample_rate = 44100
-        # guard: if sounddevice throws due to no input device, return zeros
-        audio = sd.rec(int(duration * sample_rate), samplerate=sample_rate,
-                       channels=1, dtype='float32', blocking=True)
+        sr = 22050
+        audio = sd.rec(int(duration * sr), samplerate=sr, channels=1, dtype='float32', blocking=True)
         if audio is None or audio.size == 0:
             return 0, 0
         rms = float(np.sqrt(np.mean(np.square(audio))))
-        scaled = min(max(rms * 180.0, 0.0), 1.0)
+        scaled = min(max(rms * 200.0, 0.0), 1.0)
         percent = int(scaled * 100)
-        bars = int((percent / 100) * 10)
+        bars = int(round((percent / 100) * 10))
         return bars, percent
     except Exception as e:
-        # Print for debugging but don't crash
-        # (If you want less spam, remove this print later)
-        print("MIC Error:", e)
+        # debug print once in awhile
+        # print("MIC Error:", e)
         return 0, 0
 
 # ─────────────────────────────────────────────
-# WORKER THREAD
+# Worker thread: collects sensors and spotify
 # ─────────────────────────────────────────────
 def stats_worker_loop(spotify_interval=1.0):
-    # Initialize COM on this worker thread
+    global _worker_stop
     try:
         pythoncom.CoInitialize()
     except Exception:
         pass
 
-    last_spotify = 0.0
-    global _worker_stop, _spotify_cache
-
     psutil.cpu_percent(interval=None)  # warmup
+    last_spotify = 0.0
+    spotify_cache = {"text": "Spotify: —", "ts": 0.0}
+    SPOTIFY_TTL = 3.0
 
     while not _worker_stop:
         try:
             # Battery
             try:
                 battery = psutil.sensors_battery()
-                batt = f"Battery: {battery.percent}%" if battery else "Battery: --%"
+                batt_text = f"Battery: {battery.percent}%" if battery else "Battery: --%"
             except Exception:
-                batt = "Battery: --%"
+                batt_text = "Battery: --%"
 
             # RAM
             try:
-                ram = f"RAM: {psutil.virtual_memory().percent}%"
+                ram_text = f"RAM: {psutil.virtual_memory().percent}%"
             except Exception:
-                ram = "RAM: --%"
+                ram_text = "RAM: --%"
 
             # CPU
             try:
-                cpu = f"CPU: {psutil.cpu_percent(interval=0.05)}%"
+                cpu_text = f"CPU: {psutil.cpu_percent(interval=0.05)}%"
             except Exception:
-                cpu = "CPU: --%"
+                cpu_text = "CPU: --%"
 
             # GPU
             try:
@@ -204,85 +217,80 @@ def stats_worker_loop(spotify_interval=1.0):
                     gpus = GPUtil.getGPUs()
                     if gpus:
                         g = gpus[0]
-                        gpu = f"GPU: {g.load*100:.0f}%"
+                        gpu_text = f"GPU: {g.load*100:.0f}%"
                     else:
-                        gpu = "GPU: N/A"
+                        gpu_text = "GPU: N/A"
                 else:
-                    gpu = "GPU: N/A"
+                    gpu_text = "GPU: N/A"
             except Exception:
-                gpu = "GPU: N/A"
+                gpu_text = "GPU: N/A"
 
             # Foreground app
             try:
                 hwnd = win32gui.GetForegroundWindow()
                 _, pid = win32process.GetWindowThreadProcessId(hwnd)
                 proc = ps.Process(pid)
-                app = f"App: {proc.name()}"
+                app_text = f"App: {proc.name()}"
             except Exception:
-                app = "App: —"
+                app_text = "App: —"
 
             # Date / Time
             now = datetime.datetime.now()
-            date = f"Date: {now.day:02}/{now.month:02}/{now.year}"
-            tim = f"Time: {now.strftime('%I:%M %p')}"
+            date_text = f"Date: {now.day:02}/{now.month:02}/{now.year}"
+            time_text = f"Time: {now.strftime('%I:%M %p')}"
 
             # Mic
             mic_bars, mic_percent = get_mic_level_blocking()
 
-            # Spotify (refresh every spotify_interval seconds)
+            # Spotify (throttled)
             now_t = time.time()
+            sp = None
             if now_t - last_spotify >= spotify_interval:
                 try:
-                    sp = spotify_now_playing()  # returns string or None
+                    sp = spotify_now_playing()
                 except Exception as e:
-                    print("Spotify worker error:", e)
+                    # don't spam
+                    # print("Spotify worker error:", e)
                     sp = None
                 last_spotify = now_t
             else:
-                with stats_lock:
-                    sp = stats.get("spotify", None)
+                sp = None
 
-            # Use cache logic:
+            # cache logic
+            spotify_to_write = spotify_cache["text"]
             if sp and sp.strip():
-                # got new valid text; store it
-                _spotify_cache["text"] = sp
-                _spotify_cache["ts"] = time.time()
+                spotify_cache["text"] = sp
+                spotify_cache["ts"] = time.time()
                 spotify_to_write = sp
             else:
-                # no new text; if cache recent, use it; else show default
-                if time.time() - _spotify_cache["ts"] <= _SPOTIFY_CACHE_TTL and _spotify_cache["text"]:
-                    spotify_to_write = _spotify_cache["text"]
-                else:
+                if time.time() - spotify_cache["ts"] > SPOTIFY_TTL:
                     spotify_to_write = "Spotify: —"
 
-            # Write stats
+            # write all stats
             with stats_lock:
-                stats["battery"] = batt
-                stats["ram"] = ram
-                stats["gpu"] = gpu
-                stats["cpu"] = cpu
-                stats["app"] = app
-                stats["date"] = date
-                stats["time"] = tim
+                stats["battery"] = batt_text
+                stats["ram"] = ram_text
+                stats["gpu"] = gpu_text
+                stats["cpu"] = cpu_text
+                stats["app"] = app_text
+                stats["date"] = date_text
+                stats["time"] = time_text
                 stats["mic_bars"] = mic_bars
                 stats["mic_percent"] = mic_percent
                 stats["spotify"] = spotify_to_write
 
         except Exception:
-            # Print stack so we can see if something keeps failing
-            import traceback
             traceback.print_exc()
 
         time.sleep(0.05)
 
-    # Uninitialize COM for thread cleanup (best-effort)
     try:
         pythoncom.CoUninitialize()
     except Exception:
         pass
 
 # ─────────────────────────────────────────────
-# OVERLAY UI
+# Overlay UI
 # ─────────────────────────────────────────────
 class Overlay(QWidget):
     def __init__(self):
@@ -293,17 +301,15 @@ class Overlay(QWidget):
         self.setStyleSheet("background-color: black;")
 
         # safe screen width access
-        scr_w = 800
         try:
             scr_w = QApplication.primaryScreen().size().width()
         except Exception:
-            pass
-
+            scr_w = 800
         self.setGeometry(0, 0, scr_w, 26)
 
         layout = QHBoxLayout()
         layout.setContentsMargins(8, 2, 8, 2)
-        layout.setSpacing(90)
+        layout.setSpacing(40)
 
         self.battery_label = QLabel()
         self.ram_label = QLabel()
@@ -312,12 +318,13 @@ class Overlay(QWidget):
         self.app_label = QLabel()
         self.date_label = QLabel()
         self.time_label = QLabel()
+        self.timer_label = QLabel()
         self.mic_label = QLabel()
         self.spotify_label = QLabel()
 
         self.labels = [
             self.battery_label, self.ram_label, self.gpu_label, self.cpu_label,
-            self.app_label, self.date_label, self.time_label,
+            self.app_label, self.date_label, self.time_label, self.timer_label,
             self.mic_label, self.spotify_label
         ]
 
@@ -328,42 +335,112 @@ class Overlay(QWidget):
         layout.addStretch(1)
         self.setLayout(layout)
 
-        # Update timer
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_overlay)
-        self.timer.start(200)
+        # UI update timer
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.update_overlay)
+        self.update_timer.start(200)
 
         # Start worker thread
-        self.worker = threading.Thread(target=stats_worker_loop, daemon=True)
-        self.worker.start()
+        self.worker_thread = threading.Thread(target=stats_worker_loop, daemon=True)
+        self.worker_thread.start()
+
+        # Hotkeys listener
+        self.keys_down = set()
+        self.listener = keyboard.Listener(on_press=self.key_press, on_release=self.key_release)
+        self.listener.start()
+
+    # hotkey handling
+    def key_press(self, key):
+        global color_index, current_color, _worker_stop
+
+        if not hasattr(key, "vk"):
+            return
+        vk = key.vk
+
+        if vk in self.keys_down:
+            return
+        self.keys_down.add(vk)
+
+        # Numpad 7 (vk 103) -> timer cycle: start -> pause -> reset+start
+        if vk == 103:
+            # determine current timer state
+            secs = timer_get_seconds_int()
+            with timer_lock:
+                running = _timer_running
+            if not running and secs == 0:
+                # start
+                timer_start()
+            elif running:
+                # pause
+                timer_pause()
+            else:
+                # not running but secs > 0 -> reset+start
+                timer_reset_and_start()
+
+        # Numpad 8 (vk 104) -> color cycle
+        if vk == 104:
+            color_index = (color_index + 1) % len(COLOR_CYCLE)
+            current_color = COLOR_CYCLE[color_index]
+            self.apply_colors()
+
+        # Numpad 9 (vk 105) -> full restart
+        if vk == 105:
+            # stop workers and exec the process again
+            try:
+                _worker_stop = True
+                time.sleep(0.05)
+            except Exception:
+                pass
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    def key_release(self, key):
+        if hasattr(key, "vk"):
+            self.keys_down.discard(key.vk)
+
+    def apply_colors(self):
+        for lbl in self.labels:
+            lbl.setStyleSheet(f"color: {current_color}; font-size: 12px;")
 
     def update_overlay(self):
         with stats_lock:
-            self.battery_label.setText(stats["battery"])
-            self.ram_label.setText(stats["ram"])
-            self.gpu_label.setText(stats["gpu"])
-            self.cpu_label.setText(stats["cpu"])
-            self.app_label.setText(stats["app"])
-            self.date_label.setText(stats["date"])
-            self.time_label.setText(stats["time"])
+            batt = stats.get("battery", "Battery: --%")
+            ram = stats.get("ram", "RAM: --%")
+            gpu = stats.get("gpu", "GPU: --%")
+            cpu = stats.get("cpu", "CPU: --%")
+            app = stats.get("app", "App: —")
+            date = stats.get("date", "Date: --/--/----")
+            tim = stats.get("time", "Time: --:--")
+            mic_bars = stats.get("mic_bars", 0)
+            mic_percent = stats.get("mic_percent", 0)
+            spotify_text = stats.get("spotify", "Spotify: —")
 
-            bars = max(0, min(10, stats["mic_bars"]))
-            mic_bar = "█" * bars + "░" * (10 - bars)
-            self.mic_label.setText(f"Mic: {mic_bar} {stats['mic_percent']}%")
+        self.battery_label.setText(batt)
+        self.ram_label.setText(ram)
+        self.gpu_label.setText(gpu)
+        self.cpu_label.setText(cpu)
+        self.app_label.setText(app)
+        self.date_label.setText(date)
+        self.time_label.setText(tim)
 
-            self.spotify_label.setText(stats["spotify"])
+        # timer display (format: Timer: 231 with 3-digit zero padding)
+        secs = timer_get_seconds_int()
+        self.timer_label.setText(f"Timer: {secs:03d}")
 
+        bars = max(0, min(10, mic_bars))
+        mic_bar = "█" * bars + "░" * (10 - bars)
+        self.mic_label.setText(f"Mic: {mic_bar} {mic_percent}%")
+
+        self.spotify_label.setText(spotify_text)
 
 # ─────────────────────────────────────────────
 # RUN
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    o = Overlay()
-    o.show()
-
+    overlay = Overlay()
+    overlay.show()
     try:
-        print("Overlay started — watch the console for Spotify debug.")
+        print("Overlay started. Use Numpad 7 to control timer, 8 to change color, 9 to restart.")
         sys.exit(app.exec_())
     finally:
         _worker_stop = True
