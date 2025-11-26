@@ -89,12 +89,12 @@ class Overlay(QWidget):
 
         # Top bar dimensions
         screen_width = QApplication.primaryScreen().size().width()
-        self.setGeometry(0, 0, screen_width, 26)
+        self.setGeometry(0, 0, screen_width, 12)
 
         # Layout
         layout = QHBoxLayout()
         layout.setContentsMargins(12, 2, 12, 2)
-        layout.setSpacing(30)
+        layout.setSpacing(90)
 
         # Add widgets in requested order
         self.battery_label = QLabel("Battery: --%")
