@@ -53,17 +53,17 @@ def fetch_spotify_sync():
 # MIC FUNCTION USING SOUNDEVICE
 # ─────────────────────────────────────────────
 def get_mic_level():
-    """Returns a tuple (bars, percent) for mic bar."""
+    """Returns a tuple (bars, percent) for mic bar with 10 bars."""
     try:
         duration = 0.05  # 50ms snippet
         sample_rate = 44100
         audio = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='float32', blocking=True)
         rms = float(np.sqrt(np.mean(np.square(audio))))
-        scaled = min(max(rms * 180.0, 0.0), 1.0)  # tweak factor if too low/high
+        scaled = min(max(rms * 180.0, 0.0), 1.0)  # tweak factor
         percent = int(scaled * 100)
-        bars = int((percent / 100) * 5)
+        bars = int((percent / 100) * 10)  # 10 bars now
         return bars, percent
-    except:
+    except Exception:
         return 0, 0
 
 # ─────────────────────────────────────────────
@@ -201,7 +201,7 @@ class Overlay(QWidget):
 
         # Mic
         bars, percent = get_mic_level()
-        mic_bar = "█" * bars + "░" * (5 - bars)
+        mic_bar = "█" * bars + "░" * (10 - bars)  # 10 bars
         self.mic_label.setText(f"Mic: {mic_bar} {percent}% (Mic)")
 
         # Timer
