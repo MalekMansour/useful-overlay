@@ -185,12 +185,12 @@ class Overlay(QWidget):
     # MIC DEVICE
     # ─────────────────────────────────────────────
     def get_mic_device(self):
-        try:
-            enumerator = IMMDeviceEnumerator()
-            mic = enumerator.GetDefaultAudioEndpoint(eCapture, 1)
-            return mic, mic.FriendlyName
-        except:
-            return None, "No Mic"
+     try:
+         enumerator = IMMDeviceEnumerator()
+         mic = enumerator.GetDefaultAudioEndpoint(eCapture, 2)
+         return mic, mic.FriendlyName
+     except:
+         return None, "No Mic"
 
     def get_mic_level(self):
         try:
