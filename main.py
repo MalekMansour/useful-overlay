@@ -6,7 +6,9 @@ import time
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout
 import winsdk.windows.media.control as wmc
-import win32api
+from ctypes import POINTER, cast
+from comtypes import CLSCTX_ALL
+from pycaw.pycaw import AudioUtilities, IAudioMeterInformation, IAudioEndpointVolume
 from pynput import keyboard
 
 # ─────────────────────────────────────────────
@@ -79,10 +81,15 @@ class Overlay(QWidget):
         self.battery_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
         layout.addWidget(self.battery_label)
 
-        # Mic level (kept exactly as before)
-        self.mic_label = QLabel("Mic: ▄▄▄▄▄ 0%")
+        # Mic level
+        self.mic_label = QLabel("Mic: ▄▄▄▄▄ 0% (Mic Name)")
         self.mic_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
         layout.addWidget(self.mic_label)
+
+        # System volume
+        self.volume_label = QLabel("Vol: ▄▄▄▄▄ 0%")
+        self.volume_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
+        layout.addWidget(self.volume_label)
 
         # Timer
         self.timer_label = QLabel("Timer: 00:00")
@@ -108,7 +115,7 @@ class Overlay(QWidget):
         self._last_spotify_time = 0.0
         self._spotify_interval = 1.0  # seconds
 
-        # Currently pressed keys (to prevent color spam)
+        # Key cooldown for color changes
         self.keys_down = set()
 
         # Update loop
@@ -123,8 +130,12 @@ class Overlay(QWidget):
         )
         self.listener.start()
 
+        # Mic & Volume devices
+        self.mic_device, self.mic_name = self.get_mic_device()
+        self.volume_device = self.get_volume_device()
+
     # ─────────────────────────────────────────────
-    # HOTKEY LISTENER (NUMPAD)
+    # HOTKEY LISTENER
     # ─────────────────────────────────────────────
     def key_press(self, key):
         global current_color
@@ -133,7 +144,7 @@ class Overlay(QWidget):
         else:
             return
 
-        # Prevent multiple triggers if key is held
+        # Prevent multiple triggers
         if vk in self.keys_down:
             return
         self.keys_down.add(vk)
@@ -148,7 +159,7 @@ class Overlay(QWidget):
                 self.start_time = None
                 self.seconds = 0
 
-        # Color Hotkeys
+        # Color hotkeys
         num = None
         if vk in (103, 104, 105):  # 7-8-9
             num = {103: 7, 104: 8, 105: 9}[vk]
@@ -167,8 +178,48 @@ class Overlay(QWidget):
         style = f"color: {current_color}; font-size: 13px;"
         self.battery_label.setStyleSheet(style)
         self.mic_label.setStyleSheet(style)
+        self.volume_label.setStyleSheet(style)
         self.timer_label.setStyleSheet(style)
         self.spotify_label.setStyleSheet(style)
+
+    # ─────────────────────────────────────────────
+    # MIC AND VOLUME DEVICES
+    # ─────────────────────────────────────────────
+    def get_mic_device(self):
+        devices = AudioUtilities.GetMicrophone()
+        if devices:
+            mic = devices[0]
+            return mic, mic.FriendlyName
+        return None, "No Mic"
+
+    def get_volume_device(self):
+        try:
+            sessions = AudioUtilities.GetSpeakers()
+            interface = sessions.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            volume = cast(interface, POINTER(IAudioEndpointVolume))
+            return volume
+        except:
+            return None
+
+    def get_mic_level(self):
+        try:
+            if not self.mic_device:
+                return 0
+            interface = self.mic_device.Activate(IAudioMeterInformation._iid_, CLSCTX_ALL, None)
+            meter = cast(interface, POINTER(IAudioMeterInformation))
+            level = meter.GetPeakValue() * 100
+            return int(level)
+        except:
+            return 0
+
+    def get_volume_level(self):
+        try:
+            if not self.volume_device:
+                return 0
+            level = self.volume_device.GetMasterVolumeLevelScalar() * 100
+            return int(level)
+        except:
+            return 0
 
     # ─────────────────────────────────────────────
     # UPDATE LOOP
@@ -177,20 +228,22 @@ class Overlay(QWidget):
         # Battery
         try:
             battery = psutil.sensors_battery()
-            batt_text = f"Batt: {battery.percent}%" if battery is not None else "Batt: --%"
+            batt_text = f"Batt: {battery.percent}%" if battery else "Batt: --%"
         except:
             batt_text = "Batt: --%"
         self.battery_label.setText(batt_text)
 
-        # Mic (kept as-is)
-        try:
-            mic_level = win32api.GetAsyncKeyState(0x41)  # placeholder for your previous method
-            mic_val = abs(mic_level) % 100
-            bars = int(mic_val / 20)
-            mic_bar = "█" * bars + "░" * (5 - bars)
-            self.mic_label.setText(f"Mic: {mic_bar} {mic_val}%")
-        except:
-            self.mic_label.setText("Mic: ░░░░░ 0%")
+        # Mic
+        mic_val = self.get_mic_level()
+        bars = int(mic_val / 20)
+        mic_bar = "█" * bars + "░" * (5 - bars)
+        self.mic_label.setText(f"Mic: {mic_bar} {mic_val}% ({self.mic_name})")
+
+        # Volume
+        vol_val = self.get_volume_level()
+        bars = int(vol_val / 20)
+        vol_bar = "█" * bars + "░" * (5 - bars)
+        self.volume_label.setText(f"Vol: {vol_bar} {vol_val}%")
 
         # Timer
         if self.timer_running and self.start_time is not None:
@@ -201,7 +254,7 @@ class Overlay(QWidget):
 
         # Spotify (throttled)
         now = time.time()
-        if now - self._last_spotify_time >= self._spotify_interval:
+        if now - getattr(self, "_last_spotify_time", 0) >= 1.0:
             self._last_spotify_time = now
             song = fetch_spotify_sync()
             self.spotify_label.setText(song or "")
