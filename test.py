@@ -92,12 +92,12 @@ class Overlay(QWidget):
         layout.setSpacing(30)
 
         # Battery
-        self.battery_label = QLabel("Batt: --%")
+        self.battery_label = QLabel("Battery: --%")
         self.battery_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
         layout.addWidget(self.battery_label)
 
         # Mic level
-        self.mic_label = QLabel("Mic: ░░░░░ 0% (No Mic)")
+        self.mic_label = QLabel("Mic: ░░░░░ 0%")
         self.mic_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
         layout.addWidget(self.mic_label)
 
