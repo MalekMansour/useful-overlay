@@ -84,20 +84,20 @@ class Overlay(QWidget):
 
         # Top bar dimensions
         screen_width = QApplication.primaryScreen().size().width()
-        self.setGeometry(0, 0, screen_width, 26)
+        self.setGeometry(0, 0, screen_width, 12)
 
         # Layout
         layout = QHBoxLayout()
         layout.setContentsMargins(12, 2, 12, 2)
-        layout.setSpacing(30)
+        layout.setSpacing(50)
 
         # Battery
-        self.battery_label = QLabel("Batt: --%")
+        self.battery_label = QLabel("Battery: --%")
         self.battery_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
         layout.addWidget(self.battery_label)
 
         # Mic level
-        self.mic_label = QLabel("Mic: ░░░░░ 0% (No Mic)")
+        self.mic_label = QLabel("Mic: ░░░░░ 0%")
         self.mic_label.setStyleSheet(f"color: {current_color}; font-size: 13px;")
         layout.addWidget(self.mic_label)
 
@@ -181,7 +181,7 @@ class Overlay(QWidget):
             self.keys_down.discard(key.vk)
 
     def apply_colors(self):
-        style = f"color: {current_color}; font-size: 13px;"
+        style = f"color: {current_color}; font-size: 11px;"
         self.battery_label.setStyleSheet(style)
         self.mic_label.setStyleSheet(style)
         self.timer_label.setStyleSheet(style)
