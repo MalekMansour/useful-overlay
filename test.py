@@ -62,7 +62,7 @@ def fetch_spotify_sync():
 def get_mic_level():
     """Returns a tuple (bars, percent) for mic bar with 10 bars."""
     try:
-        duration = 0.05  # 50ms snippet
+        duration = 0.05  
         sample_rate = 44100
         audio = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='float32', blocking=True)
         rms = float(np.sqrt(np.mean(np.square(audio))))
