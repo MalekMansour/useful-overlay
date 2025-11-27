@@ -156,7 +156,7 @@ def spotify_now_playing():
     return None
 
 # ─────────────────────────────────────────────
-# Mic level (non-blocking-ish but short)
+# Mic level
 # ─────────────────────────────────────────────
 MIC_NOISE_FLOOR = 0.005      
 MIC_ATTACK = 0.9
