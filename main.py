@@ -156,23 +156,57 @@ def spotify_now_playing():
     return None
 
 # ─────────────────────────────────────────────
-# Mic level (non-blocking-ish but short)
+# Mic level
 # ─────────────────────────────────────────────
+MIC_NOISE_FLOOR = 0.005      
+MIC_ATTACK = 0.9
+MIC_RELEASE = 0.4
+_smoothed_level = 0.0
+
 def get_mic_level_blocking():
+    global _smoothed_level
+
     try:
-        duration = 0.05
-        sr = 22050
-        audio = sd.rec(int(duration * sr), samplerate=sr, channels=1, dtype='float32', blocking=True)
+        duration = 0.04
+        sr = 16000
+        audio = sd.rec(int(duration * sr), samplerate=sr, channels=1,
+                       dtype='float32', blocking=True)
+
         if audio is None or audio.size == 0:
             return 0, 0
-        rms = float(np.sqrt(np.mean(np.square(audio))))
-        scaled = min(max(rms * 200.0, 0.0), 1.0)
-        percent = int(scaled * 100)
-        bars = int(round((percent / 100) * 10))
+
+        rms = float(np.sqrt(np.mean(audio**2)))
+
+        # Silence
+        if rms < MIC_NOISE_FLOOR:
+            target = 0.0
+        else:
+            # EXTREME BOOST
+            boosted = rms * 100.0   
+
+            # Soft compression so it doesn't instantly hit 100%
+            compressed = boosted / (1 + boosted)
+
+            target = max(0.0, min(compressed, 1.0))
+
+        # Smooth attack/release
+        if target > _smoothed_level:
+            _smoothed_level = (
+                _smoothed_level * (1 - MIC_ATTACK)
+                + target * MIC_ATTACK
+            )
+        else:
+            _smoothed_level = (
+                _smoothed_level * (1 - MIC_RELEASE)
+                + target * MIC_RELEASE
+            )
+
+        percent = int(_smoothed_level * 100)
+        bars = int(_smoothed_level * 10)
+
         return bars, percent
-    except Exception as e:
-        # debug print once in awhile
-        # print("MIC Error:", e)
+
+    except Exception:
         return 0, 0
 
 # ─────────────────────────────────────────────
@@ -382,9 +416,8 @@ class Overlay(QWidget):
             current_color = COLOR_CYCLE[color_index]
             self.apply_colors()
 
-        # Numpad 9 (vk 105) -> full restart
+        # Numpad 9 -> full restart
         if vk == 105:
-            # stop workers and exec the process again
             try:
                 _worker_stop = True
                 time.sleep(0.05)
@@ -421,7 +454,7 @@ class Overlay(QWidget):
         self.date_label.setText(date)
         self.time_label.setText(tim)
 
-        # timer display (format: Timer: 231 with 3-digit zero padding)
+        # timer display 
         secs = timer_get_seconds_int()
         self.timer_label.setText(f"Timer: {secs:03d}")
 
@@ -431,9 +464,7 @@ class Overlay(QWidget):
 
         self.spotify_label.setText(spotify_text)
 
-# ─────────────────────────────────────────────
 # RUN
-# ─────────────────────────────────────────────
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     overlay = Overlay()
