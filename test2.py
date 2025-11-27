@@ -158,9 +158,9 @@ def spotify_now_playing():
 # ─────────────────────────────────────────────
 # Mic level (non-blocking-ish but short)
 # ─────────────────────────────────────────────
-MIC_NOISE_FLOOR = 0.01
-MIC_ATTACK = 0.7
-MIC_RELEASE = 0.25
+MIC_NOISE_FLOOR = 0.005      # lower noise floor
+MIC_ATTACK = 0.75
+MIC_RELEASE = 0.30
 _smoothed_level = 0.0
 
 def get_mic_level_blocking():
@@ -175,19 +175,21 @@ def get_mic_level_blocking():
         if audio is None or audio.size == 0:
             return 0, 0
 
-        # Raw RMS value
         rms = float(np.sqrt(np.mean(audio**2)))
 
-        # Silence detection
+        # Silence
         if rms < MIC_NOISE_FLOOR:
             target = 0.0
         else:
-            # BOOSTED scaling so normal talking → 70–100%
-            # This is the important part ↓↓↓
-            boosted = rms * 8.0   # 8x microphone gain curve
-            target = max(0.0, min(boosted, 1.0))  # clamp 0–1
+            # EXTREME BOOST
+            boosted = rms * 20.0   # 20x gain curve (VERY strong)
 
-        # Smooth (attack = fast rise, release = slower fall)
+            # Soft compression so it doesn't instantly hit 100%
+            compressed = boosted / (1 + boosted)
+
+            target = max(0.0, min(compressed, 1.0))
+
+        # Smooth attack/release
         if target > _smoothed_level:
             _smoothed_level = (
                 _smoothed_level * (1 - MIC_ATTACK)
