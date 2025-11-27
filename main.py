@@ -36,7 +36,7 @@ COLOR_CYCLE = [
     "#8de6ee",  # cyan
     "#9ef39e",  # green
     "#fd75d0",  # pink
-    "#8943cf"   # purple
+    "#7d53a8"   # purple
 ]
 color_index = 0
 current_color = COLOR_CYCLE[color_index]
