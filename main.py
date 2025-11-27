@@ -394,23 +394,19 @@ class Overlay(QWidget):
             return
         self.keys_down.add(vk)
 
-        # Numpad 7 (vk 103) -> timer cycle: start -> pause -> reset+start
+        # Numpad 7 -> timer cycle
         if vk == 103:
-            # determine current timer state
             secs = timer_get_seconds_int()
             with timer_lock:
                 running = _timer_running
             if not running and secs == 0:
-                # start
                 timer_start()
             elif running:
-                # pause
                 timer_pause()
             else:
-                # not running but secs > 0 -> reset+start
                 timer_reset_and_start()
 
-        # Numpad 8 (vk 104) -> color cycle
+        # Numpad 8 -> color cycle
         if vk == 104:
             color_index = (color_index + 1) % len(COLOR_CYCLE)
             current_color = COLOR_CYCLE[color_index]
