@@ -27,9 +27,7 @@ except:
 import os
 import traceback
 
-# ─────────────────────────────────────────────
-# COLORS (order requested)
-# ─────────────────────────────────────────────
+# Colour Cycle
 COLOR_CYCLE = [
     "white",
     "#e73535",  # red
