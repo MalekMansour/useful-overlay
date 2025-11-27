@@ -158,10 +158,10 @@ def spotify_now_playing():
 # ─────────────────────────────────────────────
 # Mic level (non-blocking-ish but short)
 # ─────────────────────────────────────────────
-MIC_NOISE_FLOOR = 0.01   # anything below this is "silence"
-MIC_ATTACK = 0.7         # how fast it goes up (0–1)
-MIC_RELEASE = 0.2        # how fast it goes down (0–1)
-_smoothed_level = 0.0    # internal smoothing storage
+MIC_NOISE_FLOOR = 0.01
+MIC_ATTACK = 0.7
+MIC_RELEASE = 0.25
+_smoothed_level = 0.0
 
 def get_mic_level_blocking():
     global _smoothed_level
@@ -175,34 +175,32 @@ def get_mic_level_blocking():
         if audio is None or audio.size == 0:
             return 0, 0
 
-        # Raw RMS
+        # Raw RMS value
         rms = float(np.sqrt(np.mean(audio**2)))
 
-        # Remove noise floor (anything below this ignores tiny PC/room noise)
+        # Silence detection
         if rms < MIC_NOISE_FLOOR:
-            rms_filtered = 0.0
+            target = 0.0
         else:
-            # Rescale above noise floor
-            rms_filtered = (rms - MIC_NOISE_FLOOR) / (0.2 - MIC_NOISE_FLOOR)
-            rms_filtered = max(0.0, min(rms_filtered, 1.0))
+            # BOOSTED scaling so normal talking → 70–100%
+            # This is the important part ↓↓↓
+            boosted = rms * 8.0   # 8x microphone gain curve
+            target = max(0.0, min(boosted, 1.0))  # clamp 0–1
 
-        # Smooth it (fast up, slower down)
-        if rms_filtered > _smoothed_level:
-            # attack (rise fast)
+        # Smooth (attack = fast rise, release = slower fall)
+        if target > _smoothed_level:
             _smoothed_level = (
                 _smoothed_level * (1 - MIC_ATTACK)
-                + rms_filtered * MIC_ATTACK
+                + target * MIC_ATTACK
             )
         else:
-            # release (fall slow)
             _smoothed_level = (
                 _smoothed_level * (1 - MIC_RELEASE)
-                + rms_filtered * MIC_RELEASE
+                + target * MIC_RELEASE
             )
 
-        # Scale to 10 bars + percentage
         percent = int(_smoothed_level * 100)
-        bars = int((_smoothed_level) * 10)
+        bars = int(_smoothed_level * 10)
 
         return bars, percent
 
