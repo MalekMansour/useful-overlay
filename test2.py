@@ -158,21 +158,55 @@ def spotify_now_playing():
 # ─────────────────────────────────────────────
 # Mic level (non-blocking-ish but short)
 # ─────────────────────────────────────────────
+MIC_NOISE_FLOOR = 0.01   # anything below this is "silence"
+MIC_ATTACK = 0.7         # how fast it goes up (0–1)
+MIC_RELEASE = 0.2        # how fast it goes down (0–1)
+_smoothed_level = 0.0    # internal smoothing storage
+
 def get_mic_level_blocking():
+    global _smoothed_level
+
     try:
-        duration = 0.05
-        sr = 22050
-        audio = sd.rec(int(duration * sr), samplerate=sr, channels=1, dtype='float32', blocking=True)
+        duration = 0.04
+        sr = 16000
+        audio = sd.rec(int(duration * sr), samplerate=sr, channels=1,
+                       dtype='float32', blocking=True)
+
         if audio is None or audio.size == 0:
             return 0, 0
-        rms = float(np.sqrt(np.mean(np.square(audio))))
-        scaled = min(max(rms * 200.0, 0.0), 1.0)
-        percent = int(scaled * 100)
-        bars = int(round((percent / 100) * 10))
+
+        # Raw RMS
+        rms = float(np.sqrt(np.mean(audio**2)))
+
+        # Remove noise floor (anything below this ignores tiny PC/room noise)
+        if rms < MIC_NOISE_FLOOR:
+            rms_filtered = 0.0
+        else:
+            # Rescale above noise floor
+            rms_filtered = (rms - MIC_NOISE_FLOOR) / (0.2 - MIC_NOISE_FLOOR)
+            rms_filtered = max(0.0, min(rms_filtered, 1.0))
+
+        # Smooth it (fast up, slower down)
+        if rms_filtered > _smoothed_level:
+            # attack (rise fast)
+            _smoothed_level = (
+                _smoothed_level * (1 - MIC_ATTACK)
+                + rms_filtered * MIC_ATTACK
+            )
+        else:
+            # release (fall slow)
+            _smoothed_level = (
+                _smoothed_level * (1 - MIC_RELEASE)
+                + rms_filtered * MIC_RELEASE
+            )
+
+        # Scale to 10 bars + percentage
+        percent = int(_smoothed_level * 100)
+        bars = int((_smoothed_level) * 10)
+
         return bars, percent
-    except Exception as e:
-        # debug print once in awhile
-        # print("MIC Error:", e)
+
+    except Exception:
         return 0, 0
 
 # ─────────────────────────────────────────────
