@@ -41,9 +41,7 @@ COLOR_CYCLE = [
 color_index = 0
 current_color = COLOR_CYCLE[color_index]
 
-# ─────────────────────────────────────────────
-# SHARED STATS
-# ─────────────────────────────────────────────
+# Shared Stats
 stats_lock = threading.Lock()
 stats = {
     "battery": "Battery: --%",
@@ -59,13 +57,11 @@ stats = {
 }
 _worker_stop = False
 
-# ─────────────────────────────────────────────
-# Timer state (controlled by numpad 7)
-# ─────────────────────────────────────────────
+# Timer state 
 timer_lock = threading.Lock()
 _timer_running = False   # True when actively counting
 _timer_offset = 0.0      # seconds accumulated while previously running
-_timer_start_time = None # wall-clock when current run began
+_timer_start_time = None
 
 def timer_start():
     global _timer_running, _timer_start_time
@@ -96,9 +92,7 @@ def timer_get_seconds_int():
             total += time.time() - _timer_start_time
         return int(total)
 
-# ─────────────────────────────────────────────
-# Spotify helper (permissive)
-# ─────────────────────────────────────────────
+# Spotify helper 
 async def _spotify_get_async():
     sessions = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
     current = sessions.get_current_session()
@@ -138,7 +132,6 @@ def spotify_now_playing():
         try:
             return asyncio.run(_spotify_get_async())
         except Exception:
-            # fallback loop
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
