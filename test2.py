@@ -182,7 +182,7 @@ def get_mic_level_blocking():
             target = 0.0
         else:
             # EXTREME BOOST
-            boosted = rms * 80.0   
+            boosted = rms * 100.0   
 
             # Soft compression so it doesn't instantly hit 100%
             compressed = boosted / (1 + boosted)
