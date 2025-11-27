@@ -1,6 +1,5 @@
 import ctypes
 ctypes.windll.user32.SetProcessDPIAware()
-
 import sys
 import asyncio
 import pythoncom
@@ -17,7 +16,6 @@ import threading
 import win32gui, win32process
 import psutil as ps
 
-# optional GPUtil
 try:
     import GPUtil
     gpu_available = True
