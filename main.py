@@ -1,3 +1,16 @@
+'''
+Useful Overlay by Malek Mansour
+Displays system stats, microphone level, Spotify track, and a timer in an always-on-top overlay.
+Hotkeys (Numpad): 7, 8, 9
+- Numpad 7: Start/Pause/Reset Timer 
+- Numpad 8: Cycle Overlay Colour
+- Numpad 9: Full Restart Overlay
+This program was developed and tested on Windows 10/11 with Python 3.8+.
+Requires: PyQt5, psutil, sounddevice, numpy, winsdk, pynput, pywin32, GPUtil
+Usage:
+    python main.py  
+'''
+
 import ctypes
 ctypes.windll.user32.SetProcessDPIAware()
 import sys
