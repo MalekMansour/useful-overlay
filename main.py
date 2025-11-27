@@ -155,9 +155,7 @@ def spotify_now_playing():
             pass
     return None
 
-# ─────────────────────────────────────────────
 # Mic level
-# ─────────────────────────────────────────────
 MIC_NOISE_FLOOR = 0.005      
 MIC_ATTACK = 0.9
 MIC_RELEASE = 0.4
@@ -209,9 +207,7 @@ def get_mic_level_blocking():
     except Exception:
         return 0, 0
 
-# ─────────────────────────────────────────────
 # Worker thread: collects sensors and spotify
-# ─────────────────────────────────────────────
 def stats_worker_loop(spotify_interval=1.0):
     global _worker_stop
     try:
@@ -219,7 +215,7 @@ def stats_worker_loop(spotify_interval=1.0):
     except Exception:
         pass
 
-    psutil.cpu_percent(interval=None)  # warmup
+    psutil.cpu_percent(interval=None) 
     last_spotify = 0.0
     spotify_cache = {"text": "Spotify: —", "ts": 0.0}
     SPOTIFY_TTL = 3.0
@@ -276,15 +272,13 @@ def stats_worker_loop(spotify_interval=1.0):
             # Mic
             mic_bars, mic_percent = get_mic_level_blocking()
 
-            # Spotify (throttled)
+            # Spotify 
             now_t = time.time()
             sp = None
             if now_t - last_spotify >= spotify_interval:
                 try:
                     sp = spotify_now_playing()
                 except Exception as e:
-                    # don't spam
-                    # print("Spotify worker error:", e)
                     sp = None
                 last_spotify = now_t
             else:
@@ -323,9 +317,7 @@ def stats_worker_loop(spotify_interval=1.0):
     except Exception:
         pass
 
-# ─────────────────────────────────────────────
 # Overlay UI
-# ─────────────────────────────────────────────
 class Overlay(QWidget):
     def __init__(self):
         super().__init__()
