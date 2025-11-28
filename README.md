@@ -1,2 +1,2 @@
-# useful-overlay
+# UsefulOverlay
 A useful overlay for your computer screen.
