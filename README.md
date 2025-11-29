@@ -5,3 +5,4 @@ A useful overlay for your computer screen.
 - Battery
 - RAM Usage
 - GPU Usage
+- CPU Usage
