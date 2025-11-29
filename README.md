@@ -7,3 +7,4 @@ A useful overlay for your computer screen.
 - GPU Usage
 - CPU Usage
 - App
+- Mic Input
