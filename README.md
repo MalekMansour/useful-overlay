@@ -6,3 +6,4 @@ A useful overlay for your computer screen.
 - RAM Usage
 - GPU Usage
 - CPU Usage
+- App
