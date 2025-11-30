@@ -25,16 +25,16 @@ Clean digital time + formatted date.
 ### Built-in Timer
 Simple, always-visible countdown timer for games or tasks.
 
-### 🪟 Focused Window Detection
+### Focused Window Detection
 Displays the name of the currently focused application instantly.
 
-### 🔢 Numpad Controls
+### Numpad Controls
 
-### 🎨 Custom Themes
+### Custom Themes
 - Multiple color themes  
 - Smooth transitions  
 
-## 🧩 Technologies Used
+## Technologies Used
 - Python  
 - Tkinter (UI)  
 - psutil  
