@@ -20,7 +20,7 @@ A lightweight real-time overlay that shows useful system information, media play
 - GPU usage 
 
 ### Time & Date
-Clean digital time + formatted date.
+Digital time + formatted date.
 
 ### Built-in Timer
 Simple, always-visible countdown timer for games or tasks.
