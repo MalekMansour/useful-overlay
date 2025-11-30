@@ -29,6 +29,9 @@ Simple, always-visible countdown timer for games or tasks.
 Displays the name of the currently focused application instantly.
 
 ### Numpad Controls
+NUM7: Start and End the timer.
+NUM8: Switch Colours.
+NUM9: Restart the program.
 
 ### Custom Themes
 - Multiple color themes  
