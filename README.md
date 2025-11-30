@@ -14,11 +14,10 @@ A lightweight real-time overlay that shows useful system information, media play
 - Works with **Spotify, YouTube, YouTube Music, Twitch, SoundCloud**, and anything using Windows Media Sessions  
 - Automatically switches between apps depending on what’s playing
 
-### 🖥 System Stats
+### System Stats
 - CPU usage  
 - RAM usage  
-- GPU usage (if available — laptops may show N/A)  
-- Temperature reading supported on desktop PCs
+- GPU usage 
 
 ### ⏰ Time & Date
 Clean digital time + formatted date.
