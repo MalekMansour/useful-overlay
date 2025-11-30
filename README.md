@@ -19,27 +19,20 @@ A lightweight real-time overlay that shows useful system information, media play
 - RAM usage  
 - GPU usage 
 
-### ⏰ Time & Date
+### Time & Date
 Clean digital time + formatted date.
 
-### ⏱ Built-in Timer
+### Built-in Timer
 Simple, always-visible countdown timer for games or tasks.
 
 ### 🪟 Focused Window Detection
 Displays the name of the currently focused application instantly.
 
 ### 🔢 Numpad Controls
-All controls use numpad keys so you don’t interfere with typing:
-- **Numpad 8** → Cycle through color themes  
-- **Numpad 2** → Switch microphones  
-- More custom keybinds can be added
 
 ### 🎨 Custom Themes
 - Multiple color themes  
 - Smooth transitions  
-- No flickering or glitches even when switching rapidly
-
----
 
 ## 🧩 Technologies Used
 - Python  
@@ -49,4 +42,4 @@ All controls use numpad keys so you don’t interfere with typing:
 - numpy  
 - asyncio  
 - windows-media-controller  
-- pyinstaller (for building .exe)
+- pyinstaller
